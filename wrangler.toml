@@ -5,4 +5,4 @@ compatibility_date = "2026-11-02"
 [[d1_databases]]
 binding = "DB"
 database_name = "eskola-laguntzaileak"
-database_id = "REEMPLAZAR_CON_EL_ID_DE_D1"
+database_id = "a3c5238f-1f1d-4a48-9a7c-bec3e744f899"

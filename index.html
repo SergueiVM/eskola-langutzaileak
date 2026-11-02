@@ -38,18 +38,30 @@ th:first-child,td:first-child{text-align:left}
 tr.lo td{background:color-mix(in srgb,var(--ye) 22%,transparent)}
 </style></head><body><div id="app"></div>
 <script>
-let S={people:[],jornadas:[]},authenticated=false,saveChain=Promise.resolve();
+let S={people:[],jornadas:[]},authenticated=false,saveChain=Promise.resolve(),saveBroken=false;
 let tab='j',cur=null,mes='';
 function status(t){const e=$('sync');if(e)e.textContent=t}
-function save(){
- if(!authenticated)return;
- const body=JSON.stringify(S);
- saveChain=saveChain.catch(()=>{}).then(async()=>{
-  const res=await fetch('/api/state',{method:'PUT',headers:{'Content-Type':'application/json'},body});
+function save(action){
+ if(!authenticated||saveBroken)return;
+ status('Guardando cambios…');
+ saveChain=saveChain.then(async()=>{
+  if(saveBroken)return;
+  const res=await fetch('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(action)});
   if(res.status===401){authenticated=false;showLogin();throw Error('La sesión ha caducado. Vuelve a iniciar sesión.')}
   if(!res.ok)throw Error('El servidor no pudo guardar los cambios (HTTP '+res.status+').');
   status('Cambios guardados en Cloudflare.');
- }).catch(e=>{console.error(e);status('Error al guardar: '+e.message)});
+ }).catch(async e=>{
+  saveBroken=true;console.error(e);
+  if(!authenticated)return;
+  status('Error al guardar. Recuperando los datos del servidor…');
+  try{
+   const res=await fetch('/api/state');
+   if(res.status===401){authenticated=false;showLogin('La sesión ha caducado. Vuelve a iniciar sesión.');return}
+   if(!res.ok)throw Error('HTTP '+res.status);
+   S=(await res.json()).state;R();
+   status('No se guardaron los últimos cambios. Recarga la página para volver a editar.');
+  }catch(loadError){console.error(loadError);status('Error al guardar y recuperar los datos. Recarga la página.')}
+ });
 }
 const uid=()=>Math.random().toString(36).slice(2,9);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -62,25 +74,27 @@ function counts(mo){const c={};S.people.forEach(p=>c[p.id]={r:0,m:0});
   if(mo&&m.date.slice(0,7)!==mo)return;
   if(m.ref.p&&m.ref.c&&c[m.ref.p])c[m.ref.p].r++;
   if(m.mesa.p&&m.mesa.c&&c[m.mesa.p])c[m.mesa.p].m++;}));return c}
-function addP(){$('np').value.split('\n').map(s=>s.trim()).filter(Boolean).forEach(n=>S.people.push({id:uid(),name:n}));save();R()}
+function addP(){const people=$('np').value.split('\n').map(s=>s.trim()).filter(Boolean).map(name=>({id:uid(),name}));if(!people.length)return;
+ S.people.push(...people);save({type:'people.add',people});R()}
 function delP(id){if(!confirm('¿Eliminar a esta persona?'))return;
  S.people=S.people.filter(p=>p.id!==id);
- S.jornadas.forEach(j=>{j.avail=j.avail.filter(x=>x!==id);j.matches.forEach(m=>['ref','mesa'].forEach(r=>{if(m[r].p===id)m[r]={p:'',c:false}}))});save();R()}
+ S.jornadas.forEach(j=>{j.avail=j.avail.filter(x=>x!==id);j.matches.forEach(m=>['ref','mesa'].forEach(r=>{if(m[r].p===id)m[r]={p:'',c:false}}))});save({type:'person.delete',id});R()}
 function addJ(){const n=$('nj').value.trim()||('Jornada '+(S.jornadas.length+1));
- const j={id:uid(),name:n,avail:[],matches:[]};S.jornadas.push(j);cur=j.id;save();R()}
-function delJ(){if(!confirm('¿Borrar esta jornada y sus partidos?'))return;S.jornadas=S.jornadas.filter(j=>j.id!==cur);cur=null;save();R()}
-function tgA(id){const j=J(),i=j.avail.indexOf(id);i<0?j.avail.push(id):j.avail.splice(i,1);save();R()}
-function allA(){J().avail=S.people.map(p=>p.id);save();R()}
+ const j={id:uid(),name:n,avail:[],matches:[]};S.jornadas.push(j);cur=j.id;save({type:'jornada.add',jornada:{id:j.id,name:j.name}});R()}
+function delJ(){if(!confirm('¿Borrar esta jornada y sus partidos?'))return;const id=cur;S.jornadas=S.jornadas.filter(j=>j.id!==id);cur=null;save({type:'jornada.delete',id});R()}
+function tgA(id){const j=J(),i=j.avail.indexOf(id),available=i<0;i<0?j.avail.push(id):j.avail.splice(i,1);save({type:'availability.set',jornadaId:j.id,personId:id,available});R()}
+function allA(){const j=J();j.avail=S.people.map(p=>p.id);save({type:'availability.setAll',jornadaId:j.id,personIds:j.avail.slice()});R()}
 function addM(){const j=J();if(!$('md').value){alert('Indica la fecha del partido');return}
- j.matches.push({id:uid(),date:$('md').value,time:$('mt').value,desc:$('mx').value.trim(),ref:{p:'',c:false},mesa:{p:'',c:false}});save();R()}
-function delM(id){const j=J();j.matches=j.matches.filter(m=>m.id!==id);save();R()}
+ const match={id:uid(),date:$('md').value,time:$('mt').value,desc:$('mx').value.trim(),ref:{p:'',c:false},mesa:{p:'',c:false}};
+ j.matches.push(match);save({type:'match.add',jornadaId:j.id,match});R()}
+function delM(id){const j=J();j.matches=j.matches.filter(m=>m.id!==id);save({type:'match.delete',id});R()}
 const M=id=>J().matches.find(m=>m.id===id);
-function setS(id,r,v){M(id)[r]={p:v,c:!!v};save();R()}
-function cf(id,r){M(id)[r].c=true;save();R()}
-function cfAll(){J().matches.forEach(m=>['ref','mesa'].forEach(r=>{if(m[r].p)m[r].c=true}));save();R()}
+function setS(id,r,v){M(id)[r]={p:v,c:!!v};save({type:'assignment.set',matchId:id,role:r,personId:v});R()}
+function cf(id,r){M(id)[r].c=true;save({type:'assignment.confirm',matchId:id,role:r});R()}
+function cfAll(){const j=J();j.matches.forEach(m=>['ref','mesa'].forEach(r=>{if(m[r].p)m[r].c=true}));save({type:'assignment.confirmAll',jornadaId:j.id});R()}
 function sug(){const j=J();
  j.matches.forEach(m=>['ref','mesa'].forEach(r=>{if(!m[r].c)m[r]={p:'',c:false}}));
- const c=counts(),ms=sorted(j);let miss=0;
+ const c=counts(),ms=sorted(j),assignments=[];let miss=0;
  ['ref','mesa'].forEach(role=>ms.forEach(m=>{
   if(m[role].p)return;
   const busy=new Set();
@@ -88,11 +102,22 @@ function sug(){const j=J();
   const k=role==='ref'?'r':'m';
   const cand=j.avail.filter(id=>c[id]&&!busy.has(id)).map(id=>({id,a:c[id][k],t:c[id].r+c[id].m,x:Math.random()})).sort((a,b)=>a.a-b.a||a.t-b.t||a.x-b.x);
   if(!cand.length){miss++;return}
-  m[role]={p:cand[0].id,c:false};c[cand[0].id][k]++;}));
- save();R();if(miss)alert(miss+' puesto(s) sin candidato disponible')}
+  m[role]={p:cand[0].id,c:false};assignments.push({matchId:m.id,role,personId:cand[0].id});c[cand[0].id][k]++;}));
+ if(assignments.length)save({type:'assignment.suggested',assignments});R();if(miss)alert(miss+' puesto(s) sin candidato disponible')}
 function exp(){$('bk').value=JSON.stringify(S)}
-function imp(){try{const d=JSON.parse($('bk').value);if(!d.people||!d.jornadas)throw 0;S=d;cur=null;save();R()}catch(e){alert('Copia no válida')}}
-function newSeason(){if(!confirm('Se borrarán todas las jornadas y partidos. La lista de personas se mantiene. ¿Empezar nueva temporada?'))return;S.jornadas=[];cur=null;mes='';save();tab='j';R()}
+async function imp(){
+ try{
+  const d=JSON.parse($('bk').value);
+  if(!d.people||!d.jornadas)throw Error('Copia no válida');
+  if(!confirm('Esto reemplazará todos los datos compartidos de la base de datos. ¿Continuar?'))return;
+  await saveChain;if(saveBroken)throw Error('Recarga la página antes de importar.');
+  const res=await fetch('/api/state',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});
+  if(res.status===401){authenticated=false;showLogin();throw Error('La sesión ha caducado.')}
+  if(!res.ok)throw Error(res.status===400?'La copia no tiene un formato válido.':'El servidor no pudo importar los datos (HTTP '+res.status+').');
+  S=d;cur=null;await loadState();status('Copia importada y guardada en Cloudflare.');
+ }catch(e){console.error(e);alert(e.message||'No se pudo importar la copia')}
+}
+function newSeason(){if(!confirm('Se borrarán todas las jornadas y partidos. La lista de personas se mantiene. ¿Empezar nueva temporada?'))return;S.jornadas=[];cur=null;mes='';save({type:'season.clear'});tab='j';R()}
 function T(t){tab=t;R()}
 function sel(j,m,r,c){const s=m[r];
  const o='<option value="">— sin asignar —</option>'+S.people.map(p=>`<option value="${p.id}" ${s.p===p.id?'selected':''}>${esc(p.name)}${j.avail.includes(p.id)?'':' (no disp.)'} · A${c[p.id].r} M${c[p.id].m}</option>`).join('');
@@ -140,7 +165,7 @@ function vMes(){
  return h+'</div>'}
 function R(){
  const t=[['j','Jornadas'],['r','Resumen'],['p','Personas']];
- $('app').innerHTML='<h1>Eskola Laguntzaileak</h1><div class="tabs">'+t.map(x=>`<button class="${tab===x[0]?'on':''}" onclick="T('${x[0]}')">${x[1]}</button>`).join('')+'<button class="s" onclick="logout()">Salir</button></div><p id="sync" class="mu" role="status"></p>'+(tab==='j'?vJ():tab==='r'?vR():vP());
+ $('app').innerHTML='<h1>Eskola Laguntzaileak</h1><div class="tabs">'+t.map(x=>`<button class="${tab===x[0]?'on':''}" onclick="T('${x[0]}')">${x[1]}</button>`).join('')+'<button class="s" onclick="refresh()">Actualizar</button><button class="s" onclick="logout()">Salir</button></div><p id="sync" class="mu" role="status"></p>'+(tab==='j'?vJ():tab==='r'?vR():vP());
 }
 function showLogin(message=''){
  $('app').innerHTML='<div id="login" class="card"><h1>Eskola Laguntzaileak</h1><p class="mu">Introduce la contraseña para acceder.</p><form onsubmit="login(event)"><div class="row"><input id="password" type="password" autocomplete="current-password" required placeholder="Contraseña"></div><div id="login-error" class="mu" role="alert">'+esc(message)+'</div><div class="row"><button type="submit">Entrar</button></div></form></div>';
@@ -151,9 +176,13 @@ async function loadState(){
  if(!res.ok)throw Error('No se pudieron cargar los datos (HTTP '+res.status+').');
  const data=await res.json();
  S=data.state||{people:[],jornadas:[]};
- authenticated=true;
- const e=est(),n=S.jornadas.find(j=>e[j.id]==='n');if(n)cur=n.id;
+ authenticated=true;saveBroken=false;
+ if(!S.jornadas.some(j=>j.id===cur)){const e=est(),n=S.jornadas.find(j=>e[j.id]==='n');cur=n?n.id:null}
  R();return true;
+}
+async function refresh(){
+ try{await saveChain;if(await loadState())status('Datos actualizados desde Cloudflare.')}
+ catch(e){console.error(e);status('No se pudieron actualizar los datos: '+e.message)}
 }
 async function login(event){
  event.preventDefault();
