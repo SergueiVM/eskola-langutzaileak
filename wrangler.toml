@@ -1,0 +1,8 @@
+name = "eskola-laguntzaileak"
+pages_build_output_dir = "./dist"
+compatibility_date = "2026-11-02"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "eskola-laguntzaileak"
+database_id = "REEMPLAZAR_CON_EL_ID_DE_D1"

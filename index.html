@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Eskola Laguntzaileak</title>
+<style>
+:root{--bg:#f3f5f2;--card:#fff;--tx:#17201c;--mu:#64706a;--bd:#dde3de;--ac:#0f766e;--acx:#fff;--ye:#f2c230;--ok:#15803d;color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#101513;--card:#1a211e;--tx:#e8eeea;--mu:#93a19a;--bd:#2c3631;--ac:#2dd4bf;--acx:#06201c;--ok:#4ade80;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#101513;--card:#1a211e;--tx:#e8eeea;--mu:#93a19a;--bd:#2c3631;--ac:#2dd4bf;--acx:#06201c;--ok:#4ade80;color-scheme:dark}
+*{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.4 "Segoe UI",system-ui,sans-serif}
+#app{max-width:640px;margin:0 auto;padding:12px 12px 40px}
+h1{font-size:20px;margin:6px 0 10px;letter-spacing:.2px}
+.tabs{display:flex;gap:6px;margin-bottom:12px}
+.tabs button{flex:1;background:var(--card);color:var(--tx);border:1px solid var(--bd)}
+.tabs button.on{background:var(--ac);color:var(--acx);border-color:var(--ac)}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:10px;margin-bottom:10px}
+.row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:6px 0}
+input,select,textarea,button{font:inherit;color:var(--tx);background:var(--bg);border:1px solid var(--bd);border-radius:8px;padding:8px 10px;min-height:40px}
+input,select{flex:1;min-width:0}
+textarea{width:100%;min-height:70px}
+button{cursor:pointer;background:var(--ac);color:var(--acx);border-color:var(--ac);font-weight:600}
+button.s{background:var(--bg);color:var(--tx);border-color:var(--bd);font-weight:400}
+button.chip{background:var(--bg);color:var(--tx);border:1px solid var(--bd);border-radius:20px;font-weight:400;padding:6px 12px;min-height:34px}
+button.chip.on{background:var(--ac);color:var(--acx);border-color:var(--ac)}
+button.chip.nx{box-shadow:inset 0 -3px var(--ye)}button.chip.pa{opacity:.6}
+.mu{color:var(--mu);font-size:14px}
+.lb{width:62px;font-size:13px;font-weight:700;color:var(--mu)}
+.lb.r{color:var(--tx);box-shadow:inset 0 -3px var(--ye)}
+.ok{color:var(--ok);font-weight:700;padding:0 6px}
+.pend select{border-style:dashed;border-color:var(--ye)}
+.tw{overflow-x:auto}
+#sync{min-height:20px;margin:0 0 10px}
+#login{max-width:400px;margin:12vh auto}
+table{border-collapse:collapse;width:100%}
+th,td{padding:7px 6px;border-bottom:1px solid var(--bd);text-align:center}
+th:first-child,td:first-child{text-align:left}
+tr.lo td{background:color-mix(in srgb,var(--ye) 22%,transparent)}
+</style></head><body><div id="app"></div>
+<script>
+let S={people:[],jornadas:[]},authenticated=false,saveChain=Promise.resolve();
+let tab='j',cur=null,mes='';
+function status(t){const e=$('sync');if(e)e.textContent=t}
+function save(){
+ if(!authenticated)return;
+ const body=JSON.stringify(S);
+ saveChain=saveChain.catch(()=>{}).then(async()=>{
+  const res=await fetch('/api/state',{method:'PUT',headers:{'Content-Type':'application/json'},body});
+  if(res.status===401){authenticated=false;showLogin();throw Error('La sesión ha caducado. Vuelve a iniciar sesión.')}
+  if(!res.ok)throw Error('El servidor no pudo guardar los cambios (HTTP '+res.status+').');
+  status('Cambios guardados en Cloudflare.');
+ }).catch(e=>{console.error(e);status('Error al guardar: '+e.message)});
+}
+const uid=()=>Math.random().toString(36).slice(2,9);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const $=i=>document.getElementById(i);
+const J=()=>S.jornadas.find(j=>j.id===cur);
+const sorted=j=>j.matches.slice().sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));
+const fd=d=>{try{return new Date(d+'T00:00').toLocaleDateString('es',{weekday:'short',day:'numeric',month:'short'})}catch(e){return d}};
+function counts(mo){const c={};S.people.forEach(p=>c[p.id]={r:0,m:0});
+ S.jornadas.forEach(j=>j.matches.forEach(m=>{
+  if(mo&&m.date.slice(0,7)!==mo)return;
+  if(m.ref.p&&m.ref.c&&c[m.ref.p])c[m.ref.p].r++;
+  if(m.mesa.p&&m.mesa.c&&c[m.mesa.p])c[m.mesa.p].m++;}));return c}
+function addP(){$('np').value.split('\n').map(s=>s.trim()).filter(Boolean).forEach(n=>S.people.push({id:uid(),name:n}));save();R()}
+function delP(id){if(!confirm('¿Eliminar a esta persona?'))return;
+ S.people=S.people.filter(p=>p.id!==id);
+ S.jornadas.forEach(j=>{j.avail=j.avail.filter(x=>x!==id);j.matches.forEach(m=>['ref','mesa'].forEach(r=>{if(m[r].p===id)m[r]={p:'',c:false}}))});save();R()}
+function addJ(){const n=$('nj').value.trim()||('Jornada '+(S.jornadas.length+1));
+ const j={id:uid(),name:n,avail:[],matches:[]};S.jornadas.push(j);cur=j.id;save();R()}
+function delJ(){if(!confirm('¿Borrar esta jornada y sus partidos?'))return;S.jornadas=S.jornadas.filter(j=>j.id!==cur);cur=null;save();R()}
+function tgA(id){const j=J(),i=j.avail.indexOf(id);i<0?j.avail.push(id):j.avail.splice(i,1);save();R()}
+function allA(){J().avail=S.people.map(p=>p.id);save();R()}
+function addM(){const j=J();if(!$('md').value){alert('Indica la fecha del partido');return}
+ j.matches.push({id:uid(),date:$('md').value,time:$('mt').value,desc:$('mx').value.trim(),ref:{p:'',c:false},mesa:{p:'',c:false}});save();R()}
+function delM(id){const j=J();j.matches=j.matches.filter(m=>m.id!==id);save();R()}
+const M=id=>J().matches.find(m=>m.id===id);
+function setS(id,r,v){M(id)[r]={p:v,c:!!v};save();R()}
+function cf(id,r){M(id)[r].c=true;save();R()}
+function cfAll(){J().matches.forEach(m=>['ref','mesa'].forEach(r=>{if(m[r].p)m[r].c=true}));save();R()}
+function sug(){const j=J();
+ j.matches.forEach(m=>['ref','mesa'].forEach(r=>{if(!m[r].c)m[r]={p:'',c:false}}));
+ const c=counts(),ms=sorted(j);let miss=0;
+ ['ref','mesa'].forEach(role=>ms.forEach(m=>{
+  if(m[role].p)return;
+  const busy=new Set();
+  j.matches.forEach(x=>{if(x.date===m.date&&x.time===m.time)['ref','mesa'].forEach(r=>{if(x[r].p)busy.add(x[r].p)})});
+  const k=role==='ref'?'r':'m';
+  const cand=j.avail.filter(id=>c[id]&&!busy.has(id)).map(id=>({id,a:c[id][k],t:c[id].r+c[id].m,x:Math.random()})).sort((a,b)=>a.a-b.a||a.t-b.t||a.x-b.x);
+  if(!cand.length){miss++;return}
+  m[role]={p:cand[0].id,c:false};c[cand[0].id][k]++;}));
+ save();R();if(miss)alert(miss+' puesto(s) sin candidato disponible')}
+function exp(){$('bk').value=JSON.stringify(S)}
+function imp(){try{const d=JSON.parse($('bk').value);if(!d.people||!d.jornadas)throw 0;S=d;cur=null;save();R()}catch(e){alert('Copia no válida')}}
+function newSeason(){if(!confirm('Se borrarán todas las jornadas y partidos. La lista de personas se mantiene. ¿Empezar nueva temporada?'))return;S.jornadas=[];cur=null;mes='';save();tab='j';R()}
+function T(t){tab=t;R()}
+function sel(j,m,r,c){const s=m[r];
+ const o='<option value="">— sin asignar —</option>'+S.people.map(p=>`<option value="${p.id}" ${s.p===p.id?'selected':''}>${esc(p.name)}${j.avail.includes(p.id)?'':' (no disp.)'} · A${c[p.id].r} M${c[p.id].m}</option>`).join('');
+ return `<div class="row ${s.p&&!s.c?'pend':''}"><span class="lb ${r==='ref'?'r':''}">${r==='ref'?'Árbitro':'Mesa'}</span><select onchange="setS('${m.id}','${r}',this.value)">${o}</select>${s.p?(s.c?'<span class="ok">✓</span>':`<button class="s" onclick="cf('${m.id}','${r}')">Confirmar</button>`):''}</div>`}
+function today(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
+function jr(j){const d=j.matches.map(m=>m.date).sort();return d.length?{a:d[0],b:d[d.length-1]}:null}
+function est(){const t=today(),o={};let nx=false;
+ S.jornadas.map(j=>({j,r:jr(j)})).filter(x=>x.r).sort((x,y)=>x.r.a.localeCompare(y.r.a)).forEach(x=>{
+  if(x.r.b<t)o[x.j.id]='p';else if(!nx){o[x.j.id]='n';nx=true}else o[x.j.id]='f'});
+ return o}
+function jlist(){const e=est(),ic={p:'✓ ',n:'▶ '};
+ return S.jornadas.slice().sort((a,b)=>{const x=jr(a),y=jr(b);return (x?x.a:'9999').localeCompare(y?y.a:'9999')}).map(j=>`<button class="chip ${j.id===cur?'on':''} ${e[j.id]==='n'?'nx':''} ${e[j.id]==='p'?'pa':''}" onclick="cur='${j.id}';R()">${ic[e[j.id]]||''}${esc(j.name)}</button>`).join('')}
+function jinfo(j){const e=est()[j.id],r=jr(j);if(!r)return 'Sin partidos todavía';
+ return ({p:'Jornada pasada',n:'Próxima jornada',f:'Jornada futura'})[e]+' · '+fd(r.a)+(r.b!==r.a?' – '+fd(r.b):'')}
+function vJ(){
+ let h='<div class="card"><div class="row">'+jlist()+'</div><p class="mu">✓ pasada · ▶ próxima · el resto, futuras</p><div class="row"><input id="nj" placeholder="Nombre (ej. Jornada 5)"><button onclick="addJ()">Crear jornada</button></div></div>';
+ const j=J();if(!j)return h+'<p class="mu">Crea o elige una jornada para asignar partidos.</p>';
+ const c=counts();
+ h+=`<div class="card"><p class="mu" style="margin:0">${jinfo(j)}</p><div class="row"><b>Disponibles en ${esc(j.name)}</b><button class="s" onclick="allA()">Marcar todos</button></div><div class="row">`+S.people.map(p=>`<button class="chip ${j.avail.includes(p.id)?'on':''}" onclick="tgA('${p.id}')">${esc(p.name)}</button>`).join('')+'</div>'+(S.people.length?'':'<p class="mu">Añade personas en la pestaña Personas.</p>')+'</div>';
+ h+='<div class="card"><b>Nuevo partido</b><div class="row"><input type="date" id="md" value="'+((sorted(j).slice(-1)[0]||{date:''}).date)+'"><input type="time" id="mt" value="'+(['16:00','18:00'][j.matches.length]||'16:00')+'"></div><div class="row"><input id="mx" placeholder="Partido (ej. Infantil A - Infantil B)"><button onclick="addM()">Añadir partido</button></div></div>';
+ h+='<div class="row"><button onclick="sug()">Sugerir asignaciones</button><button class="s" onclick="cfAll()">Confirmar todo</button><button class="s" onclick="delJ()">Borrar jornada</button></div>';
+ const ms=sorted(j);
+ if(!ms.length)h+='<p class="mu">Añade los partidos de la jornada.</p>';
+ ms.forEach((m,i)=>{h+=`<div class="card"><div class="row"><b style="flex:1">${i+1}. ${fd(m.date)} · ${m.time||'--:--'}</b><button class="s" onclick="delM('${m.id}')">Quitar</button></div>${m.desc?'<div class="mu">'+esc(m.desc)+'</div>':''}`+['ref','mesa'].map(r=>sel(j,m,r,c)).join('')+'</div>'});
+ return h}
+function vR(){const c=counts(mes);
+ const rows=S.people.map(p=>({n:p.name,r:c[p.id].r,m:c[p.id].m})).sort((a,b)=>(a.r+a.m)-(b.r+b.m)||a.n.localeCompare(b.n));
+ const min=rows.length?Math.min(...rows.map(x=>x.r)):0;
+ return vMes()+'<div class="card"><b>Partidos confirmados'+(mes?' · '+mn(mes):' (temporada)')+'</b><p class="mu">Ordenado de menos a más partidos. Resaltados: quienes menos arbitran.</p><div class="tw"><table><tr><th>Persona</th><th>Árbitro</th><th>Mesa</th><th>Total</th></tr>'+rows.map(x=>`<tr class="${x.r===min?'lo':''}"><td>${esc(x.n)}</td><td>${x.r}</td><td>${x.m}</td><td>${x.r+x.m}</td></tr>`).join('')+'</table></div></div>'}
+function vP(){
+ return '<div class="card"><b>Añadir personas</b><p class="mu">Una por línea.</p><textarea id="np" placeholder="Nombre 1&#10;Nombre 2"></textarea><div class="row"><button onclick="addP()">Añadir</button></div></div><div class="card"><b>Lista ('+S.people.length+')</b>'+S.people.map(p=>`<div class="row"><span style="flex:1">${esc(p.name)}</span><button class="s" onclick="delP('${p.id}')">Eliminar</button></div>`).join('')+'</div><div class="card"><b>Nueva temporada</b><p class="mu">Borra jornadas, partidos y recuentos, y conserva la lista de personas. Antes, exporta una copia de seguridad si quieres guardar esta temporada.</p><div class="row"><button class="s" onclick="newSeason()">Empezar nueva temporada</button></div></div><div class="card"><b>Copia de seguridad</b><p class="mu">Los datos se guardan en Cloudflare. Exporta para conservar una copia o pasarla a otro dispositivo.</p><textarea id="bk"></textarea><div class="row"><button class="s" onclick="exp()">Exportar</button><button class="s" onclick="imp()">Importar</button></div></div>'}
+function mn(mo){try{return new Date(mo+'-01T00:00').toLocaleDateString('es',{month:'long',year:'numeric'})}catch(e){return mo}}
+function setMes(v){mes=v;R()}
+function vMes(){
+ const P=id=>(S.people.find(p=>p.id===id)||{name:'?'}).name;
+ const sl=s=>s.p?esc(P(s.p))+(s.c?'':' (sugerido)'):'—';
+ const ms=[];S.jornadas.forEach(j=>j.matches.forEach(m=>ms.push({j:j.name,m})));
+ const mos=[...new Set(ms.map(x=>x.m.date.slice(0,7)))].sort();
+ if(mes&&!mos.includes(mes))mes='';
+ let h=`<div class="card"><b>Mes</b><div class="row"><button class="chip ${mes?'':'on'}" onclick="setMes('')">Temporada</button>`+mos.map(o=>`<button class="chip ${o===mes?'on':''}" onclick="setMes('${o}')">${mn(o)}</button>`).join('')+'</div>';
+ if(mes){
+  const l=ms.filter(x=>x.m.date.slice(0,7)===mes).sort((a,b)=>(a.m.date+a.m.time).localeCompare(b.m.date+b.m.time));
+  h+=l.map(x=>`<div style="border-top:1px solid var(--bd);padding:6px 0"><b>${fd(x.m.date)} · ${x.m.time||'--:--'}</b> <span class="mu">${esc(x.j)}</span>${x.m.desc?'<div class="mu">'+esc(x.m.desc)+'</div>':''}<div>Árbitro: ${sl(x.m.ref)}</div><div>Mesa: ${sl(x.m.mesa)}</div></div>`).join('');
+ }else if(!mos.length)h+='<p class="mu">Aún no hay partidos.</p>';
+ return h+'</div>'}
+function R(){
+ const t=[['j','Jornadas'],['r','Resumen'],['p','Personas']];
+ $('app').innerHTML='<h1>Eskola Laguntzaileak</h1><div class="tabs">'+t.map(x=>`<button class="${tab===x[0]?'on':''}" onclick="T('${x[0]}')">${x[1]}</button>`).join('')+'<button class="s" onclick="logout()">Salir</button></div><p id="sync" class="mu" role="status"></p>'+(tab==='j'?vJ():tab==='r'?vR():vP());
+}
+function showLogin(message=''){
+ $('app').innerHTML='<div id="login" class="card"><h1>Eskola Laguntzaileak</h1><p class="mu">Introduce la contraseña para acceder.</p><form onsubmit="login(event)"><div class="row"><input id="password" type="password" autocomplete="current-password" required placeholder="Contraseña"></div><div id="login-error" class="mu" role="alert">'+esc(message)+'</div><div class="row"><button type="submit">Entrar</button></div></form></div>';
+}
+async function loadState(){
+ const res=await fetch('/api/state');
+ if(res.status===401){authenticated=false;showLogin();return false}
+ if(!res.ok)throw Error('No se pudieron cargar los datos (HTTP '+res.status+').');
+ const data=await res.json();
+ S=data.state||{people:[],jornadas:[]};
+ authenticated=true;
+ const e=est(),n=S.jornadas.find(j=>e[j.id]==='n');if(n)cur=n.id;
+ R();return true;
+}
+async function login(event){
+ event.preventDefault();
+ const button=event.submitter;button.disabled=true;
+ try{
+  const res=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:$('password').value})});
+  if(!res.ok){$('login-error').textContent=res.status===401?'Contraseña incorrecta.':'No se pudo iniciar sesión. Comprueba la configuración.';return}
+  await loadState();
+ }catch(e){console.error(e);$('login-error').textContent='No se pudo conectar con el servidor.'}
+ finally{if(button.isConnected)button.disabled=false}
+}
+async function logout(){
+ try{
+  const res=await fetch('/api/logout',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+  if(!res.ok)throw Error('El servidor respondió HTTP '+res.status+'.');
+  authenticated=false;showLogin();
+ }catch(e){console.error(e);status('No se pudo cerrar sesión: '+e.message)}
+}
+loadState().catch(e=>{console.error(e);$('app').innerHTML='<div class="card" role="alert">No se pudo conectar con Cloudflare: '+esc(e.message)+'</div>'});
+</script></body></html>
