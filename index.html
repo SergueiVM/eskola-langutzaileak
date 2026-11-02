@@ -2,6 +2,12 @@
 <html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Eskola Laguntzaileak</title>
+<meta name="theme-color" content="#0f766e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icons/app-192.png" type="image/png">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
 <style>
 :root{--bg:#f3f5f2;--card:#fff;--tx:#17201c;--mu:#64706a;--bd:#dde3de;--ac:#0f766e;--acx:#fff;--ye:#f2c230;--ok:#15803d;color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 @media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#101513;--card:#1a211e;--tx:#e8eeea;--mu:#93a19a;--bd:#2c3631;--ac:#2dd4bf;--acx:#06201c;--ok:#4ade80;color-scheme:dark}}
@@ -201,5 +207,6 @@ async function logout(){
   authenticated=false;showLogin();
  }catch(e){console.error(e);status('No se pudo cerrar sesión: '+e.message)}
 }
-loadState().catch(e=>{console.error(e);$('app').innerHTML='<div class="card" role="alert">No se pudo conectar con Cloudflare: '+esc(e.message)+'</div>'});
+loadState().catch(e=>{console.error(e);$('app').innerHTML='<div class="card" role="alert">No se pudo conectar con Cloudflare. Comprueba tu conexión e inténtalo de nuevo.</div>'});
+if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(e=>console.error('No se pudo registrar el service worker:',e)));
 </script></body></html>
