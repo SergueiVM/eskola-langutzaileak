@@ -31,3 +31,4 @@ Para desarrollo local, ejecuta `npx wrangler pages dev dist`; configura también
 ## Trasladar los datos existentes
 
 Antes de publicar esta versión sobre la app antigua, abre la pestaña **Personas**, pulsa **Exportar** y guarda el contenido JSON. Tras desplegar y entrar en la nueva app, abre **Personas**, pega el JSON en **Copia de seguridad** y pulsa **Importar**. La importación sustituye todos los datos compartidos de D1. A partir de entonces, los datos se guardan en D1 y se comparten entre dispositivos. Conserva además una copia periódica usando **Exportar**.
+.
